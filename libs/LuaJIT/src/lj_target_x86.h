@@ -1,6 +1,6 @@
 /*
 ** Definitions for x86 and x64 CPUs.
-** Copyright (C) 2005-2023 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #ifndef _LJ_TARGET_X86_H
@@ -241,6 +241,9 @@ typedef enum {
   XV_SARX =	XV_f30f38(f7),
   XV_SHLX =	XV_660f38(f7),
   XV_SHRX =	XV_f20f38(f7),
+
+  /* Special NOP instructions. */
+  XI_ENDBR64 =	0xfa1e0ff3,
 
   /* Variable-length opcodes. XO_* prefix. */
   XO_OR =	XO_(0b),

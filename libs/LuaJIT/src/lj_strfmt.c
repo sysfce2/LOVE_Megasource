@@ -1,6 +1,6 @@
 /*
 ** String formatting.
-** Copyright (C) 2005-2023 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #include <stdio.h>
@@ -170,7 +170,7 @@ const char *lj_strfmt_wstrnum(lua_State *L, cTValue *o, MSize *lenp)
   } else if (tvisbuf(o)) {
     SBufExt *sbx = bufV(o);
     *lenp = sbufxlen(sbx);
-    return sbx->r;
+    return sbx->r ? sbx->r : "";
   } else if (tvisint(o)) {
     sb = lj_strfmt_putint(lj_buf_tmp_(L), intV(o));
   } else if (tvisnum(o)) {

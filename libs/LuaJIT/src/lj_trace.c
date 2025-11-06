@@ -1,6 +1,6 @@
 /*
 ** Trace management.
-** Copyright (C) 2005-2023 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2025 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #define lj_trace_c
@@ -222,14 +222,6 @@ static void trace_unpatch(jit_State *J, GCtrace *T)
 	       bc_isret(op), "bad original bytecode %d", op);
     *pc = T->startins;
     break;
-  case BC_JMP:
-    lj_assertJ(op == BC_ITERL, "bad original bytecode %d", op);
-    pc += bc_j(*pc)+2;
-    if (bc_op(*pc) == BC_JITERL) {
-      lj_assertJ(traceref(J, bc_d(*pc)) == T, "JITERL references other trace");
-      *pc = T->startins;
-    }
-    break;
   case BC_JFUNCF:
     lj_assertJ(op == BC_FUNCF, "bad original bytecode %d", op);
     *pc = T->startins;
@@ -245,18 +237,19 @@ static void trace_flushroot(jit_State *J, GCtrace *T)
   GCproto *pt = &gcref(T->startpt)->pt;
   lj_assertJ(T->root == 0, "not a root trace");
   lj_assertJ(pt != NULL, "trace has no prototype");
-  /* First unpatch any modified bytecode. */
-  trace_unpatch(J, T);
   /* Unlink root trace from chain anchored in prototype. */
   if (pt->trace == T->traceno) {  /* Trace is first in chain. Easy. */
     pt->trace = T->nextroot;
+unpatch:
+    /* Unpatch modified bytecode only if the trace has not been flushed. */
+    trace_unpatch(J, T);
   } else if (pt->trace) {  /* Otherwise search in chain of root traces. */
     GCtrace *T2 = traceref(J, pt->trace);
     if (T2) {
       for (; T2->nextroot; T2 = traceref(J, T2->nextroot))
 	if (T2->nextroot == T->traceno) {
 	  T2->nextroot = T->nextroot;  /* Unlink from chain. */
-	  break;
+	  goto unpatch;
 	}
     }
   }
@@ -349,6 +342,14 @@ void lj_trace_initstate(global_State *g)
   J->k32[LJ_K32_2P63] = 0x5f000000;
   J->k32[LJ_K32_M2P64] = 0xdf800000;
 #endif
+#endif
+#if LJ_TARGET_PPC || LJ_TARGET_MIPS32
+  J->k32[LJ_K32_VM_EXIT_HANDLER] = (uintptr_t)(void *)lj_vm_exit_handler;
+  J->k32[LJ_K32_VM_EXIT_INTERP] = (uintptr_t)(void *)lj_vm_exit_interp;
+#endif
+#if LJ_TARGET_ARM64 || LJ_TARGET_MIPS64
+  J->k64[LJ_K64_VM_EXIT_HANDLER].u64 = (uintptr_t)lj_ptr_sign((void *)lj_vm_exit_handler, 0);
+  J->k64[LJ_K64_VM_EXIT_INTERP].u64 = (uintptr_t)lj_ptr_sign((void *)lj_vm_exit_interp, 0);
 #endif
 }
 
@@ -644,10 +645,15 @@ static int trace_abort(jit_State *J)
     J->cur.traceno = 0;
   }
   L->top--;  /* Remove error object */
-  if (e == LJ_TRERR_DOWNREC)
+  if (e == LJ_TRERR_DOWNREC) {
     return trace_downrec(J);
-  else if (e == LJ_TRERR_MCODEAL)
+  } else if (e == LJ_TRERR_MCODEAL) {
+    if (!J->mcarea) {  /* Disable JIT compiler if first mcode alloc fails. */
+      J->flags &= ~JIT_F_ON;
+      lj_dispatch_update(J2G(J));
+    }
     lj_trace_flushall(L);
+  }
   return 0;
 }
 
